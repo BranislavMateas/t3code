@@ -96,7 +96,7 @@ function ScrollBar({
         "flex data-[orientation=horizontal]:mx-1 data-[orientation=horizontal]:mb-px data-[orientation=vertical]:my-1 data-[orientation=vertical]:mr-px data-[orientation=horizontal]:flex-col",
         variant === "default"
           ? "opacity-0 transition-opacity delay-300 data-[orientation=horizontal]:h-1.5 data-[orientation=vertical]:w-1.5 data-hovering:opacity-100 data-scrolling:opacity-100 data-hovering:delay-0 data-scrolling:delay-0 data-hovering:duration-100 data-scrolling:duration-100"
-          : "rounded-full bg-muted/40 p-0.5 data-[orientation=horizontal]:h-3 data-[orientation=vertical]:w-3",
+          : "rounded-full bg-muted/40 p-0.5 data-[orientation=horizontal]:h-2.5 data-[orientation=vertical]:w-2.5",
         className,
       )}
       data-slot="scroll-area-scrollbar"
