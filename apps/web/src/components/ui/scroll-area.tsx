@@ -4,6 +4,8 @@ import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 
 import { cn } from "~/lib/utils";
 
+const ScrollAreaContent = ScrollAreaPrimitive.Content;
+
 function getVirtualizedScrollFadeClassName({ top, bottom }: { top: boolean; bottom: boolean }) {
   if (!top && !bottom) return undefined;
 
@@ -27,6 +29,7 @@ function ScrollArea({
   scrollFade = false,
   scrollFadePadding = true,
   scrollbarGutter = false,
+  scrollbarVariant = "default",
   hideScrollbars = false,
   chainVerticalScroll = false,
   radius = "inherit",
@@ -36,6 +39,7 @@ function ScrollArea({
   scrollFade?: boolean;
   scrollFadePadding?: boolean;
   scrollbarGutter?: boolean;
+  scrollbarVariant?: "default" | "persistent";
   hideScrollbars?: boolean;
   chainVerticalScroll?: boolean;
   radius?: "inherit" | "none";
@@ -69,8 +73,8 @@ function ScrollArea({
       </ScrollAreaPrimitive.Viewport>
       {!hideScrollbars && (
         <>
-          <ScrollBar orientation="vertical" />
-          <ScrollBar orientation="horizontal" />
+          <ScrollBar orientation="vertical" variant={scrollbarVariant} />
+          <ScrollBar orientation="horizontal" variant={scrollbarVariant} />
           <ScrollAreaPrimitive.Corner data-slot="scroll-area-corner" />
         </>
       )}
@@ -81,12 +85,18 @@ function ScrollArea({
 function ScrollBar({
   className,
   orientation = "vertical",
+  variant = "default",
   ...props
-}: ScrollAreaPrimitive.Scrollbar.Props) {
+}: ScrollAreaPrimitive.Scrollbar.Props & {
+  variant?: "default" | "persistent";
+}) {
   return (
     <ScrollAreaPrimitive.Scrollbar
       className={cn(
-        "flex opacity-0 transition-opacity delay-300 data-[orientation=horizontal]:mx-1 data-[orientation=horizontal]:mb-px data-[orientation=horizontal]:h-1.5 data-[orientation=vertical]:my-1 data-[orientation=vertical]:mr-px data-[orientation=vertical]:w-1.5 data-[orientation=horizontal]:flex-col data-hovering:opacity-100 data-scrolling:opacity-100 data-hovering:delay-0 data-scrolling:delay-0 data-hovering:duration-100 data-scrolling:duration-100",
+        "flex data-[orientation=horizontal]:mx-1 data-[orientation=horizontal]:mb-px data-[orientation=vertical]:my-1 data-[orientation=vertical]:mr-px data-[orientation=horizontal]:flex-col",
+        variant === "default"
+          ? "opacity-0 transition-opacity delay-300 data-[orientation=horizontal]:h-1.5 data-[orientation=vertical]:w-1.5 data-hovering:opacity-100 data-scrolling:opacity-100 data-hovering:delay-0 data-scrolling:delay-0 data-hovering:duration-100 data-scrolling:duration-100"
+          : "rounded-full bg-muted/40 p-0.5 data-[orientation=horizontal]:h-3 data-[orientation=vertical]:w-3",
         className,
       )}
       data-slot="scroll-area-scrollbar"
@@ -94,11 +104,16 @@ function ScrollBar({
       {...props}
     >
       <ScrollAreaPrimitive.Thumb
-        className="relative flex-1 rounded-full bg-[var(--app-scrollbar-thumb)] transition-colors hover:bg-[var(--app-scrollbar-thumb-hover)]"
+        className={cn(
+          "relative flex-1 rounded-full transition-colors",
+          variant === "default"
+            ? "bg-[var(--app-scrollbar-thumb)] hover:bg-[var(--app-scrollbar-thumb-hover)]"
+            : "bg-muted-foreground/50 hover:bg-muted-foreground/70",
+        )}
         data-slot="scroll-area-thumb"
       />
     </ScrollAreaPrimitive.Scrollbar>
   );
 }
 
-export { getVirtualizedScrollFadeClassName, ScrollArea, ScrollBar };
+export { getVirtualizedScrollFadeClassName, ScrollArea, ScrollAreaContent, ScrollBar };
