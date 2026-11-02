@@ -1,6 +1,7 @@
 import {
   CommandId,
   type ModelSelection,
+  type ProjectId,
   type OrchestrationV2ThreadProjection,
   type ProviderInteractionMode,
   type RuntimeMode,
@@ -50,6 +51,7 @@ export class ThreadLifecycleService extends Context.Service<
       readonly threadId: ThreadId;
     }) => Effect.Effect<Pick<OrchestrationV2ThreadProjection, "thread">, ThreadLifecycleError>;
     readonly updateMetadata: (input: {
+      readonly projectId?: ProjectId;
       readonly commandId: CommandId;
       readonly threadId: ThreadId;
       readonly title?: string;
@@ -109,6 +111,7 @@ const make = Effect.gen(function* () {
     updateMetadata: (input) =>
       dispatch("update-metadata", input.threadId, {
         type: "thread.metadata.update",
+        ...(input.projectId === undefined ? {} : { projectId: input.projectId }),
         commandId: input.commandId,
         threadId: input.threadId,
         ...(input.title === undefined ? {} : { title: input.title }),

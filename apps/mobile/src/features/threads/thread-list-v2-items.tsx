@@ -1,3 +1,8 @@
+import { useProjects, useServerConfigs } from "../../state/entities";
+import { threadEnvironment } from "../../state/threads";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { ProjectId } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Dialog from "../../components/ui/Dialog";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import {
@@ -726,16 +731,49 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         : [],
     [props.autoSettleOptOutSupported, thread.autoSettleDisabledAt],
   );
-  const titleMenuItems = useMemo<MenuAction[]>(
-    () => [
-      { id: "rename", title: "Rename", image: "square.and.pencil" },
-      ...buildThreadTitleRegenerationMenuItems({
-        supported: props.titleRegenerationSupported,
-        isRegenerating: thread.titleRegeneration != null,
-      }),
-    ],
-    [props.titleRegenerationSupported, thread.titleRegeneration],
-  );
+  const moveProjects = useProjects();
+  const moveConfigs = useServerConfigs();
+  const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
+  const moveProjectActions =
+    moveConfigs.get(thread.environmentId)?.environment.capabilities.threadProjectMove === true
+      ? moveProjects
+          .filter(
+            (project) =>
+              project.environmentId === thread.environmentId && project.id !== thread.projectId,
+          )
+          .map((project) => ({
+            id: `move-project:${project.id}`,
+            title: project.isScratch ? "No project" : project.title,
+          }))
+      : [];
+  const titleMenuItems: MenuAction[] = [
+    { id: "rename", title: "Rename", image: "square.and.pencil" },
+    ...(moveProjectActions.length > 0
+      ? [
+          {
+            id: "move-project",
+            title: "Move to project",
+            image: "folder",
+            attributes: {
+              disabled:
+                (thread.worktreePath !== null &&
+                  !moveProjects.some(
+                    (project) =>
+                      project.environmentId === thread.environmentId &&
+                      project.id === thread.projectId &&
+                      project.isScratch,
+                  )) ||
+                status === "working",
+            },
+            subactions: moveProjectActions,
+          },
+        ]
+      : []),
+    ...buildThreadTitleRegenerationMenuItems({
+      supported: props.titleRegenerationSupported,
+      isRegenerating: thread.titleRegeneration != null,
+    }),
+  ];
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
       { id: "settle", title: "Settle", image: "checkmark" },
@@ -808,6 +846,25 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "archive") handleArchive();
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
+      if (nativeEvent.event.startsWith("move-project:")) {
+        if (!canOperateThread) return;
+        void updateMetadata({
+          environmentId: thread.environmentId,
+          input: {
+            threadId: thread.id,
+            projectId: ProjectId.make(nativeEvent.event.slice("move-project:".length)),
+          },
+        }).then((result) => {
+          if (result._tag === "Failure") {
+            const error = Cause.squash(result.cause);
+            Dialog.alert(
+              "Could not move thread",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+        });
+        return;
+      }
       if (nativeEvent.event === "copy-thread-id") {
         copyTextWithHaptic(thread.id, { target: "thread-id" });
       }
@@ -836,6 +893,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       handleArchive,
       handleDelete,
       handleRegenerateTitle,
+      canOperateThread,
+      updateMetadata,
       handleRename,
       handleMoveDown,
       handleMoveUp,

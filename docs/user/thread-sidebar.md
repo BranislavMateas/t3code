@@ -112,6 +112,17 @@ rename a thread, regenerate its title, or link and unlink a pull request. These 
 appear on web, desktop, and mobile without requiring the originating browser to remain
 open.
 
+### Move a chat to another project
+
+Choose **Move to project** from the chat title or sidebar menu. On mobile, use the thread menu.
+Select a project on the same server. The chat keeps its history. Future turns use the destination
+project's folder. Files stay in their original folder. Moving to **No project** keeps the current
+working folder. You can move the chat back through the same menu.
+
+Stop active work and clear queued messages before moving. Threads in a worktree must leave it
+first. Child threads cannot move independently of their parent. Update the server if the action
+is unavailable.
+
 ### Fold working threads (beta)
 
 Turn on **Settings → General → Working section (beta)** on web and desktop, or **Settings →

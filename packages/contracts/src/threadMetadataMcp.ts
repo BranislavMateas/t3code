@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 import {
   CommandId,
+  ProjectId,
   IsoDateTime,
   NonNegativeInt,
   PositiveInt,
@@ -59,13 +60,14 @@ const ThreadMetadataMcpPullRequestUrl = TrimmedNonEmptyString.check(
 });
 
 export const ThreadMetadataMcpAction = Schema.Literals([
+  "move_project",
   "rename",
   "regenerate_title",
   "link_pull_request",
   "unlink_pull_request",
 ]).annotate({
   description:
-    "Metadata mutation: rename, regenerate_title, link_pull_request, or unlink_pull_request.",
+    "Metadata mutation: move_project, rename, regenerate_title, link_pull_request, or unlink_pull_request.",
 });
 export type ThreadMetadataMcpAction = typeof ThreadMetadataMcpAction.Type;
 
@@ -83,6 +85,9 @@ export const ThreadMetadataMcpUpdateInput = Schema.Struct({
     description: "Thread to update. Omit to update the calling thread.",
   }),
   action: ThreadMetadataMcpAction,
+  projectId: Schema.optional(ProjectId).annotate({
+    description: "Destination project on this server. Required only for move_project.",
+  }),
   title: Schema.optional(ThreadMetadataTitle),
   pullRequest: Schema.optional(ThreadMetadataMcpPullRequest).annotate({
     description: "Pull request to link. Required only when action is link_pull_request.",
@@ -90,7 +95,15 @@ export const ThreadMetadataMcpUpdateInput = Schema.Struct({
   clientRequestId: Schema.optional(ThreadMetadataClientRequestId),
 }).check(
   Schema.makeFilter((input) => {
+    if (input.action !== "move_project" && input.projectId !== undefined)
+      return "Only move_project accepts projectId.";
     switch (input.action) {
+      case "move_project":
+        return input.projectId !== undefined &&
+          input.title === undefined &&
+          input.pullRequest === undefined
+          ? true
+          : "move_project requires projectId and does not accept title or pullRequest.";
       case "rename":
         return input.title !== undefined && input.pullRequest === undefined
           ? true

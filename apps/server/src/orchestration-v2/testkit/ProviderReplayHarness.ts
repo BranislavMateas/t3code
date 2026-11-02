@@ -272,6 +272,7 @@ export function layerWithRegistry<Error>(
     readonly continueThreadsAfterServerUpdate?: boolean;
   } = {},
 ): Layer.Layer<
+  | ServerConfig.ServerConfig
   | Orchestrator.OrchestratorV2
   | EffectWorker.OrchestrationEffectWorkerV2
   | EventSink.EventSinkV2
@@ -448,6 +449,7 @@ export function layerWithRegistry<Error>(
     }),
   );
   const layerOrchestratorProvided = Orchestrator.layer.pipe(
+    Layer.provide(layerServerConfig),
     Layer.provide(
       Layer.mergeAll(
         layerCheckpointServiceProvided,
@@ -508,6 +510,7 @@ export function layerWithRegistry<Error>(
     Layer.provide(Layer.merge(layerStores, layerEffectExecutorProvided)),
   );
   const layerReplayRuntime = Layer.mergeAll(
+    layerServerConfig,
     layerOrchestratorProvided,
     layerProviderSessionManagerProvided,
     layerEffectWorkerProvided,

@@ -1,3 +1,4 @@
+import { useMoveThreadToProject } from "./useMoveThreadToProject";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import {
@@ -64,6 +65,7 @@ export function useThreadActionMenu(input: {
 }) {
   const { threadRef, projectCwd, onStartRename } = input;
   const router = useRouter();
+  const moveThreadToProject = useMoveThreadToProject();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
@@ -129,6 +131,8 @@ export function useThreadActionMenu(input: {
       const isRegeneratingTitle = thread.titleRegeneration != null;
       const snoozePresets = resolveSnoozePresets(now, timestampFormat);
       const items = buildThreadActionMenuItems({
+        moveProjects: moveThreadToProject.destinations(thread),
+        hasWorktree: moveThreadToProject.hasWorktree(thread),
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
         branch: thread.branch ?? null,
         projectFilter: null,
@@ -153,6 +157,10 @@ export function useThreadActionMenu(input: {
           "Thread action unavailable",
           new Error("This connection cannot change threads."),
         );
+        return;
+      }
+      if (action.startsWith("move-project:")) {
+        await moveThreadToProject.move(threadRef, action);
         return;
       }
       if (action.startsWith("snooze:")) {

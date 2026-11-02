@@ -243,3 +243,18 @@ describe("buildDraftActionMenuItems", () => {
     expect(items.at(-1)).toMatchObject({ label: "Discard draft", destructive: true });
   });
 });
+
+describe("move to project", () => {
+  const moveProjects = [{ id: "move-project:destination" as const, label: "Destination" }];
+  it("offers destinations and blocks unavailable operations", () => {
+    const moveItem = (state: Partial<ThreadActionMenuState>) =>
+      buildThreadActionMenuItems({ ...baseState, moveProjects, ...state }).find(
+        (item) => item.id === "move-project",
+      );
+    expect(moveItem({})?.children).toEqual(moveProjects);
+    expect(moveItem({ canOperate: false })?.disabled).toBe(true);
+    expect(moveItem({ isRunning: true })?.disabled).toBe(true);
+    expect(moveItem({ hasWorktree: true })?.disabled).toBe(true);
+    expect(moveItem({ moveProjects: [] })).toBeUndefined();
+  });
+});

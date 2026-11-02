@@ -73,6 +73,13 @@ function metadataCommand(input: {
   readonly update: ThreadMetadataMcpUpdateInput;
 }): Extract<OrchestrationV2Command, { readonly type: "thread.metadata.update" }> {
   switch (input.update.action) {
+    case "move_project":
+      return {
+        type: "thread.metadata.update",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        projectId: input.update.projectId!,
+      };
     case "rename":
       return {
         type: "thread.metadata.update",

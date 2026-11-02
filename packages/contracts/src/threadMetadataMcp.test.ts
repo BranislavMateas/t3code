@@ -98,3 +98,15 @@ describe("ThreadMetadataMcpUpdateInput", () => {
     }
   });
 });
+
+it("accepts a project move and rejects incomplete or mixed requests", () => {
+  assert.equal(
+    decodeUpdate({ action: "move_project", projectId: "destination" }).projectId,
+    "destination",
+  );
+  assert.throws(() => decodeUpdate({ action: "move_project" }));
+  assert.throws(() => decodeUpdate({ action: "rename", title: "Title", projectId: "destination" }));
+  assert.throws(() =>
+    decodeUpdate({ action: "move_project", projectId: "destination", title: "Title" }),
+  );
+});

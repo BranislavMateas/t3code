@@ -107,6 +107,7 @@ import * as EffectOutbox from "./EffectOutbox.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import * as ServerConfig from "../config.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import {
   applyToProjection,
@@ -813,6 +814,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const commandReceipts = yield* CommandReceiptStoreV2;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const projects = yield* ProjectStore.ProjectStoreV2;
+  const config = yield* ServerConfig.ServerConfig;
   const projectionStore = yield* ProjectionStoreV2;
   const effectOutbox = yield* EffectOutbox.EffectOutboxV2;
   const nextTurnItemOrdinal = (
@@ -2535,6 +2537,49 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
     }
+    let movedWorktreePath: string | null = null;
+    const movingProject =
+      command.type === "thread.metadata.update" &&
+      command.projectId !== undefined &&
+      command.projectId !== thread.projectId;
+    if (
+      movingProject &&
+      command.type === "thread.metadata.update" &&
+      command.projectId !== undefined
+    ) {
+      const destination = yield* projects.get(command.projectId).pipe(mapDispatchError(command));
+      const source = yield* projects.get(thread.projectId).pipe(mapDispatchError(command));
+      const sourceIsScratch =
+        Option.isSome(source) &&
+        path.resolve(source.value.workspaceRoot) === path.resolve(config.baseDir, "scratch");
+      const { runs } = yield* projectionStore
+        .getThreadRecords(command.threadId, ["runs"])
+        .pipe(mapDispatchError(command));
+      // Unassigning a chat keeps its working folder instead of sharing the scratch root.
+      if (
+        Option.isSome(destination) &&
+        Option.isSome(source) &&
+        path.resolve(destination.value.workspaceRoot) === path.resolve(config.baseDir, "scratch")
+      ) {
+        movedWorktreePath = thread.worktreePath ?? source.value.workspaceRoot;
+      }
+      const reason =
+        Option.isNone(destination) || destination.value.deletedAt !== null
+          ? "The destination project does not exist."
+          : (!sourceIsScratch && thread.worktreePath !== null) || command.worktreePath != null
+            ? "Leave this thread's worktree before moving it to another project."
+            : runs.some((run) => isBlockingRun(run) || run.status === "queued")
+              ? "Stop active work and clear queued messages before moving this thread."
+              : thread.lineage.parentThreadId !== null
+                ? "Child threads cannot move independently of their parent."
+                : null;
+      if (reason !== null)
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: reason,
+        });
+    }
     if (
       command.type === "thread.metadata.update" &&
       command.expectedWorktreePath !== undefined &&
@@ -2736,8 +2781,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.type === "thread.archive" ||
       command.type === "thread.settle" ||
       (command.type === "thread.metadata.update" &&
-        command.worktreePath !== undefined &&
-        command.worktreePath !== thread.worktreePath);
+        (movingProject ||
+          (command.worktreePath !== undefined && command.worktreePath !== thread.worktreePath)));
     const providerContext = needsProviderState
       ? yield* projectionStore
           .getThreadProviderContext(
@@ -2996,6 +3041,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   };
           return {
             ...thread,
+            ...(command.projectId === undefined ? {} : { projectId: command.projectId }),
             ...(command.title === undefined ? {} : { title: command.title }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
@@ -3014,9 +3060,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     Date.parse(thread.limitRecovery.resetAt)
                 ? { snoozedUntil: null, snoozedAt: null, lastSnoozeWakeAt: now }
                 : {}),
-            ...(command.branch === undefined ? {} : { branch: command.branch }),
-            ...(command.worktreePath === undefined ? {} : { worktreePath: command.worktreePath }),
-            ...(command.linkedPullRequest === undefined
+            ...(movingProject
+              ? {
+                  branch: null,
+                  linkedPullRequest: null,
+                  branchPullRequest: null,
+                  pullRequests: [],
+                  activeProviderThreadId: null,
+                }
+              : command.branch === undefined
+                ? {}
+                : { branch: command.branch }),
+            ...(movingProject
+              ? { worktreePath: movedWorktreePath, limitRecovery: null }
+              : command.worktreePath === undefined
+                ? {}
+                : { worktreePath: command.worktreePath }),
+            ...(movingProject || command.linkedPullRequest === undefined
               ? {}
               : {
                   linkedPullRequest: command.linkedPullRequest,
@@ -3464,8 +3524,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.type === "thread.archive" || command.type === "thread.settle"
         ? (providerContext?.providerSessions ?? []).map((session) => session.id)
         : command.type === "thread.metadata.update" &&
-            command.worktreePath !== undefined &&
-            command.worktreePath !== thread.worktreePath
+            (movingProject ||
+              (command.worktreePath !== undefined && command.worktreePath !== thread.worktreePath))
           ? (providerContext?.providerSessions ?? []).map((session) => session.id)
           : command.type === "thread.runtime-mode.set"
             ? (providerContext?.providerSessions ?? [])
@@ -11795,6 +11855,7 @@ export const layer: Layer.Layer<
   | EventSinkV2
   | IdAllocator.IdAllocatorV2
   | ProjectStore.ProjectStoreV2
+  | ServerConfig.ServerConfig
   | ProviderAdapterRegistryV2
   | ProviderSessionManagerV2
   | ProviderSwitchServiceV2

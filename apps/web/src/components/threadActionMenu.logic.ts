@@ -15,6 +15,8 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "move-project"
+  | `move-project:${string}`
   | "rename"
   | "regenerate-title"
   | "mark-unread"
@@ -64,6 +66,8 @@ export function buildDraftActionMenuItems(options: {
 }
 
 export interface ThreadActionMenuState {
+  readonly moveProjects?: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>;
+  readonly hasWorktree?: boolean;
   readonly canOperate: boolean;
   readonly branch: string | null;
   readonly projectFilter: {
@@ -105,6 +109,17 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
+    ...(state.moveProjects?.length
+      ? [
+          {
+            id: "move-project" as const,
+            label: "Move to project",
+            icon: "folder",
+            disabled: state.isRunning || state.hasWorktree === true,
+            children: state.moveProjects,
+          },
+        ]
+      : []),
     ...(state.branch
       ? [
           {

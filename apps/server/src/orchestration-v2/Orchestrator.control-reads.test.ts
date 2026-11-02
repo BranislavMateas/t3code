@@ -24,12 +24,14 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as DelegatedTaskQuestionReactor from "./DelegatedTaskQuestionReactor.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as ProjectStore from "./ProjectStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
@@ -46,6 +48,7 @@ const adapter = {
 const layerDatabase = SqlitePersistence.layerMemory;
 const layerTest = Layer.mergeAll(
   layerDatabase,
+  ProjectStore.layer.pipe(Layer.provide(layerDatabase)),
   ProjectionStore.layer.pipe(Layer.provide(layerDatabase)),
   ProviderReplayHarness.layerWithRegistry(
     { name: "control-reads" },
@@ -1036,5 +1039,196 @@ it.effect("replays a thread.create receipt without changing the thread", () =>
     assert.deepEqual(replayed, original);
     assert.deepEqual(yield* projections.getThread(threadId), before);
     assert.equal(yield* orchestrator.getThreadEventSequence(threadId), original.sequence);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("moves threads between projects and preserves persisted conversation history", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const projects = yield* ProjectStore.ProjectStoreV2;
+    const config = yield* ServerConfig.ServerConfig;
+    const now = DateTime.formatIso(yield* DateTime.now);
+    const source = ProjectId.make("move-source");
+    const destination = ProjectId.make("move-destination");
+    for (const projectId of [source, destination]) {
+      yield* projects.apply({
+        sequence: 1,
+        eventId: EventId.make(`project:${projectId}`),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "project.created",
+        payload: {
+          projectId,
+          title: projectId,
+          workspaceRoot: projectId === source ? `${config.baseDir}/scratch` : `/work/${projectId}`,
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+    }
+    const threadId = ThreadId.make("move-thread");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("move-create"),
+      threadId,
+      projectId: source,
+      title: "Keep this conversation",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "old-branch",
+      worktreePath: `${config.baseDir}/scratch/private-chat`,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const messageTime = yield* DateTime.now;
+    yield* projections.apply({
+      id: EventId.make("move-history"),
+      type: "message.updated",
+      threadId,
+      occurredAt: messageTime,
+      payload: {
+        id: MessageId.make("move-history"),
+        threadId,
+        runId: null,
+        nodeId: null,
+        role: "user",
+        text: "Keep my history",
+        attachments: [],
+        streaming: false,
+        createdAt: messageTime,
+        updatedAt: messageTime,
+        createdBy: "user",
+        creationSource: "web",
+      },
+    });
+    yield* projections.apply({
+      id: EventId.make("move-session"),
+      type: "provider-session.attached",
+      threadId,
+      occurredAt: messageTime,
+      payload: {
+        id: ProviderSessionId.make("move-session"),
+        driver: adapter.driver,
+        providerInstanceId: instanceId,
+        status: "ready",
+        cwd: "/work/move-source",
+        model: "gpt-6",
+        capabilities: CodexProviderCapabilitiesV2,
+        createdAt: messageTime,
+        updatedAt: messageTime,
+        lastError: null,
+      },
+    });
+    const before = yield* projections.getThreadProjection(threadId);
+    for (const [index, projectId] of [destination, source].entries()) {
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make(`move-${index}`),
+        threadId,
+        projectId,
+      });
+      const after = yield* projections.getThreadProjection(threadId);
+      assert.equal(after.thread.projectId, projectId);
+      assert.equal(after.thread.id, before.thread.id);
+      assert.equal(after.thread.title, before.thread.title);
+      assert.equal(after.thread.branch, null);
+      assert.equal(
+        after.thread.worktreePath,
+        projectId === source ? "/work/move-destination" : null,
+      );
+      assert.deepEqual(after.messages, before.messages);
+      assert.equal(after.messages[0]?.text, "Keep my history");
+      assert.deepEqual(
+        (yield* projections.getThreadProviderContext(threadId)).providerSessions,
+        [],
+      );
+      const shell = yield* projections.getThreadShell(threadId);
+      assert.equal(shell?.projectId, projectId);
+    }
+    const missing = yield* Effect.exit(
+      orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("move-missing"),
+        threadId,
+        projectId: ProjectId.make("missing-project"),
+      }),
+    );
+    assert.equal(missing._tag, "Failure");
+    yield* orchestrator.dispatch({
+      type: "thread.metadata.update",
+      commandId: CommandId.make("move-worktree"),
+      threadId,
+      worktreePath: "/work/source-worktree",
+    });
+    yield* projects.apply({
+      sequence: 2,
+      eventId: EventId.make("move-source-now-regular"),
+      aggregateKind: "project",
+      aggregateId: source,
+      occurredAt: now,
+      commandId: null,
+      causationEventId: null,
+      correlationId: null,
+      metadata: {},
+      type: "project.meta-updated",
+      payload: { projectId: source, workspaceRoot: "/work/regular-source", updatedAt: now },
+    });
+    const worktreeMove = yield* Effect.exit(
+      orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make("move-worktree-rejected"),
+        threadId,
+        projectId: destination,
+      }),
+    );
+    assert.equal(worktreeMove._tag, "Failure");
+    assert.equal((yield* projections.getThreadProjection(threadId)).thread.projectId, source);
+    yield* orchestrator.dispatch({
+      type: "thread.metadata.update",
+      commandId: CommandId.make("clear-move-worktree"),
+      threadId,
+      worktreePath: null,
+    });
+    yield* orchestrator.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make("queue-before-move"),
+      threadId,
+      messageId: MessageId.make("queued-before-move"),
+      text: "Queued work",
+      attachments: [],
+      dispatchMode: { type: "defer_start" },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const run = (yield* projections.getThreadRecords(threadId, ["runs"])).runs[0]!;
+    for (const status of ["queued", "preparing", "starting", "running", "waiting"] as const) {
+      yield* projections.apply({
+        id: EventId.make(`move-run-${status}`),
+        type: "run.updated",
+        threadId,
+        runId: run.id,
+        occurredAt: messageTime,
+        payload: { ...run, status },
+      });
+      const blocked = yield* Effect.exit(
+        orchestrator.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make(`move-blocked-${status}`),
+          threadId,
+          projectId: destination,
+        }),
+      );
+      assert.equal(blocked._tag, "Failure");
+      assert.equal((yield* projections.getThread(threadId)).projectId, source);
+    }
   }).pipe(Effect.provide(layerTest)),
 );
