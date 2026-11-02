@@ -255,6 +255,9 @@ describe("move to project", () => {
     expect(moveItem({ canOperate: false })?.disabled).toBe(true);
     expect(moveItem({ isRunning: true })?.disabled).toBe(true);
     expect(moveItem({ hasWorktree: true })?.disabled).toBe(true);
-    expect(moveItem({ moveProjects: [] })).toBeUndefined();
+    expect(moveItem({ moveProjects: [] })?.children).toEqual([
+      { id: "move-project-empty", label: "Add another project to move this chat", disabled: true },
+    ]);
+    expect(moveItem({ moveProjects: undefined })).toBeUndefined();
   });
 });

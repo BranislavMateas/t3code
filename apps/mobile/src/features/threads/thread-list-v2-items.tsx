@@ -748,7 +748,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       : [];
   const titleMenuItems: MenuAction[] = [
     { id: "rename", title: "Rename", image: "square.and.pencil" },
-    ...(moveProjectActions.length > 0
+    ...(moveConfigs.get(thread.environmentId)?.environment.capabilities.threadProjectMove === true
       ? [
           {
             id: "move-project",
@@ -765,7 +765,16 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                   )) ||
                 status === "working",
             },
-            subactions: moveProjectActions,
+            subactions:
+              moveProjectActions.length > 0
+                ? moveProjectActions
+                : [
+                    {
+                      id: "move-project-empty",
+                      title: "Add another project to move this chat",
+                      attributes: { disabled: true },
+                    },
+                  ],
           },
         ]
       : []),

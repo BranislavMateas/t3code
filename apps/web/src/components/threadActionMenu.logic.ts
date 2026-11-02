@@ -15,6 +15,7 @@ export type ThreadActionMenuId =
   | "snooze"
   | `snooze:${string}`
   | "unsnooze"
+  | "move-project-empty"
   | "move-project"
   | `move-project:${string}`
   | "rename"
@@ -66,7 +67,7 @@ export function buildDraftActionMenuItems(options: {
 }
 
 export interface ThreadActionMenuState {
-  readonly moveProjects?: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>>;
+  readonly moveProjects?: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> | undefined;
   readonly hasWorktree?: boolean;
   readonly canOperate: boolean;
   readonly branch: string | null;
@@ -109,14 +110,23 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
-    ...(state.moveProjects?.length
+    ...(state.moveProjects !== undefined
       ? [
           {
             id: "move-project" as const,
             label: "Move to project",
             icon: "folder",
             disabled: state.isRunning || state.hasWorktree === true,
-            children: state.moveProjects,
+            children:
+              state.moveProjects.length > 0
+                ? state.moveProjects
+                : [
+                    {
+                      id: "move-project-empty" as const,
+                      label: "Add another project to move this chat",
+                      disabled: true,
+                    },
+                  ],
           },
         ]
       : []),

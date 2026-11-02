@@ -23,9 +23,9 @@ export function useMoveThreadToProject() {
   const destinations = (thread: {
     readonly projectId: ProjectId;
     readonly environmentId: EnvironmentId;
-  }): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> =>
+  }): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> | undefined =>
     configs.get(thread.environmentId)?.environment.capabilities.threadProjectMove !== true
-      ? []
+      ? undefined
       : projects
           .filter(
             (project) =>
